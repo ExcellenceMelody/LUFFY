@@ -1,0 +1,100 @@
+name: Diagnose README TODO
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/sync-readme-todo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Fetch main
+        run: git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+      - name: Diagnose
+        run: |
+          cat > /tmp/diag.py <<'PY'
+          import re, subprocess
+          from pathlib import Path
+          r = Path('.')
+          s = (r/'README.md').read_text(encoding='utf-8')
+          lines = s.splitlines()
+          print('README bytes', len(s.encode()), 'lines', len(lines), 'CR count', s.count('\r'))
+          print('\n== ALL MARKDOWN HEADINGS ==')
+          for i,l in enumerate(lines,1):
+              if re.match(r'^#{1,6}\s+', l):
+                  print(f'{i}: {l!r}')
+          print('\n== TITLE OCCURRENCES ==')
+          for m in re.finditer('Complete TODO List', s):
+              i = s.count('\n',0,m.start())+1
+              print(i, repr(lines[i-1]), 'nonascii=', [(c,hex(ord(c))) for c in lines[i-1] if ord(c)>127])
+          title = re.search(r'(?m)^###[^\n]*Complete TODO List[^\n]*$', s)
+          print('title regex match', title.span() if title else None)
+          if title:
+              end = s.index('\n', title.end())+1
+              tail = s[end:]
+              print('next level2 match', re.search(r'(?m)^##\s+', tail))
+              print('next any heading matches:')
+              for hm in list(re.finditer(r'(?m)^#{1,6}\s+.*$', tail))[:20]:
+                  absline = end.count('\n') + tail[:hm.start()].count('\n') + 1
+                  print(' ', absline, repr(hm.group(0)))
+              print('\n== FIRST 25 SECTION BODY LINES ==')
+              body = tail.splitlines()
+              for j,l in enumerate(body[:25],1): print(f'{j}: {l!r}')
+              print('\n== LAST 30 README LINES ==')
+              start=max(1,len(lines)-29)
+              for i in range(start,len(lines)+1): print(f'{i}: {lines[i-1]!r}')
+          patterns = {
+              'all unchecked boxes': r'^- \[ \]',
+              'exact bold path-line': r'^- \[ \] \*\*[^*]+:\d+\*\* - .*$',
+              'markdown py path refs': r'\.py:\d+',
+              'any TODO word line': r'TODO',
+          }
+          print('\n== COUNTS WHOLE README ==')
+          for name,pat in patterns.items():
+              print(name, len(re.findall(pat,s,re.M)))
+          if title:
+              sec=s[end:]
+              # Current parser assumes next H2; report both whole tail and before first H2/H3
+              h2=re.search(r'(?m)^##\s+',sec)
+              h3=re.search(r'(?m)^###\s+',sec)
+              for label,text in [('to next H2', sec[:h2.start()] if h2 else sec), ('to next H3', sec[:h3.start()] if h3 else sec), ('whole tail',sec)]:
+                  print(label, 'chars',len(text),'checkbox',len(re.findall(r'^- \[ \]',text,re.M)),'exact',len(re.findall(r'^- \[ \] \*\*[^*]+:\d+\*\* - .*$',text,re.M)))
+          print('\n== CHANGED PATH README LINES ==')
+          for path in ['luffy/deepscaler/utils.py','luffy/verl/verl/protocol.py','luffy/verl/verl/trainer/fsdp_sft_trainer.py','luffy/verl/verl/trainer/main_ppo.py']:
+              hits=[i for i,l in enumerate(lines,1) if path in l]
+              print(path, 'hit lines', hits)
+              for i in hits: print(f'  {i}: {lines[i-1]!r}')
+          def git(*a): return subprocess.check_output(['git',*a],text=True).strip()
+          base=git('merge-base','HEAD','origin/main')
+          print('\n== GIT ==')
+          print('base',base,'HEAD',git('rev-parse','HEAD'))
+          print(git('diff','--name-status',base,'HEAD'))
+          print('\n== PYTHON SCAN ==')
+          pyfiles=[x for x in git('ls-files','*.py').splitlines() if x]
+          total=0
+          for path in pyfiles:
+              txt=Path(path).read_text(encoding='utf-8')
+              found=[]
+              for i,l in enumerate(txt.splitlines(),1):
+                  m=re.search(r'#\s*TODO\b(.*)$',l)
+                  if m:
+                      rest=m.group(1)
+                      if rest.startswith(':'): rest=rest[1:]
+                      found.append((i,rest.strip(),l.strip()))
+              total += len(found)
+              if path in ['luffy/deepscaler/utils.py','luffy/verl/verl/protocol.py'] or found and ('fold_batch' in txt or 'OpenAI API client' in txt):
+                  print(f'-- {path}: {len(found)}')
+                  for item in found: print('  ',item)
+          print('tracked py',len(pyfiles),'total TODO markers',total)
+          PY
+          python3 /tmp/diag.py
