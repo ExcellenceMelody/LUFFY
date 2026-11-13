@@ -40,12 +40,14 @@ jobs:
           title = re.search(r'(?m)^###[^\n]*Complete TODO List[^\n]*$', s)
           print('title regex match', title.span() if title else None)
           if title:
-              end = s.index('\n', title.end())+1
-              tail = s[end:]
+              title_line_end = s.index('\n', title.end()) + 1
+              title_line_no = s[:title.start()].count('\n') + 1
+              tail = s[title_line_end:]
+              print('title line', title_line_no, 'title line end char', title_line_end)
               print('next level2 match', re.search(r'(?m)^##\s+', tail))
               print('next any heading matches:')
               for hm in list(re.finditer(r'(?m)^#{1,6}\s+.*$', tail))[:20]:
-                  absline = end.count('\n') + tail[:hm.start()].count('\n') + 1
+                  absline = s[:title_line_end].count('\n') + tail[:hm.start()].count('\n') + 1
                   print(' ', absline, repr(hm.group(0)))
               print('\n== FIRST 25 SECTION BODY LINES ==')
               body = tail.splitlines()
@@ -63,12 +65,25 @@ jobs:
           for name,pat in patterns.items():
               print(name, len(re.findall(pat,s,re.M)))
           if title:
-              sec=s[end:]
-              # Current parser assumes next H2; report both whole tail and before first H2/H3
+              sec=s[title_line_end:]
               h2=re.search(r'(?m)^##\s+',sec)
               h3=re.search(r'(?m)^###\s+',sec)
-              for label,text in [('to next H2', sec[:h2.start()] if h2 else sec), ('to next H3', sec[:h3.start()] if h3 else sec), ('whole tail',sec)]:
-                  print(label, 'chars',len(text),'checkbox',len(re.findall(r'^- \[ \]',text,re.M)),'exact',len(re.findall(r'^- \[ \] \*\*[^*]+:\d+\*\* - .*$',text,re.M)))
+              section_text = sec[:h2.start()] if h2 else sec
+              print('section line range', title_line_no+1, 'to', title_line_no + section_text.count('\n'))
+              for label,text in [('to next H2', section_text), ('to next H3', sec[:h3.start()] if h3 else sec), ('whole tail',sec)]:
+                  print(label, 'chars',len(text),'lines',len(text.splitlines()),'checkbox',len(re.findall(r'^- \[ \]',text,re.M)),'exact',len(re.findall(r'^- \[ \] \*\*[^*]+:\d+\*\* - .*$',text,re.M)))
+              entry_re = re.compile(r'^- \[ \] \*\*(?P<path>.+?):(?P<line>\d+)\*\* - (?P<text>.*)$', re.M)
+              bad=[]
+              for off,line in enumerate(section_text.splitlines(), start=title_line_no+1):
+                  if line.strip() and not entry_re.match(line):
+                      bad.append((off,line))
+              print('nonblank non-entry section lines',len(bad))
+              for x in bad[:50]: print(' BAD',x)
+              paths={}
+              for m in entry_re.finditer(section_text): paths[m.group('path')]=paths.get(m.group('path'),0)+1
+              print('distinct entry paths',len(paths))
+              print('entry count by path (first 10):',list(paths.items())[:10])
+              print('entry count by path (last 10):',list(paths.items())[-10:])
           print('\n== CHANGED PATH README LINES ==')
           for path in ['luffy/deepscaler/utils.py','luffy/verl/verl/protocol.py','luffy/verl/verl/trainer/fsdp_sft_trainer.py','luffy/verl/verl/trainer/main_ppo.py']:
               hits=[i for i,l in enumerate(lines,1) if path in l]
