@@ -252,6 +252,7 @@ LUFFY/
 - [ ] **luffy/verl/verl/workers/fsdp_workers.py:811** - (sgm): we may need to extract it to dp_reward_model.py
 - [ ] **luffy/verl/verl/workers/megatron_workers.py:106** - (sgm): Currently, we only support reference model param offload
 - [ ] **luffy/verl/verl/workers/megatron_workers.py:204** - add more optimizer args into config
+- [ ] **luffy/verl/verl/workers/megatron_workers.py:225** - actually, we just need to control the sampling order.
 - [ ] **luffy/verl/verl/workers/megatron_workers.py:338** - here, we should return all metrics
 - [ ] **luffy/verl/verl/workers/megatron_workers.py:444** - (sgm): support critic model offload
 - [ ] **luffy/verl/verl/workers/megatron_workers.py:478** - support vpp here
@@ -278,3 +279,4 @@ LUFFY/
 2. Implement the functionality
 3. Test your implementation
 4. Update this README when TODOs are completed
+
